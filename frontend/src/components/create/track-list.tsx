@@ -73,11 +73,16 @@ export function TrackList({ tracks }: { tracks: Track[] }) {
     setTimeout(() => setIsRefreshing(false), 1000);
   };
 
-  const filteredTracks = tracks.filter(
-    (track) =>
-      track.title?.toLowerCase().includes(searchQuery.toLowerCase()) ??
-      track.prompt?.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+    const query = searchQuery.trim().toLowerCase();
+
+  const filteredTracks = tracks.filter((track) => {
+    if (!query) return true; // empty search shows everything
+    return (
+      (track.title?.toLowerCase().includes(query) ?? false) ||
+      (track.prompt?.toLowerCase().includes(query) ?? false) ||
+      (track.fullDescribedSong?.toLowerCase().includes(query) ?? false)
+    );
+  });
 
   return (
     <div className="flex flex-1 flex-col overflow-y-scroll">
@@ -204,15 +209,15 @@ export function TrackList({ tracks }: { tracks: Track[] }) {
                       {/* Track info */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="trucate text-sm font-medium">
-                            {track.title}
+                          <h3 className="truncate text-sm font-medium">
+                            {track.title ?? "Untitled"}
                           </h3>
                           {track.instrumental && (
                             <Badge variant="outline">Instrumental</Badge>
                           )}
                         </div>
                         <p className="text-muted-foreground truncate text-xs">
-                          {track.prompt}
+                          {track.prompt ?? track.fullDescribedSong}
                         </p>
                       </div>
 

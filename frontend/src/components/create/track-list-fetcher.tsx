@@ -1,5 +1,3 @@
-"use server";
-
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPresignedUrl } from "~/actions/generation";
@@ -50,6 +48,14 @@ export default async function TrackListFetcher() {
         published: song.published,
       };
     }),
+  );
+
+  // Temporary debug: remove once the list shows correctly
+  console.log(
+    "TrackListFetcher:",
+    songsWithThumbnails.length,
+    "songs",
+    songsWithThumbnails.map((s) => s.status),
   );
 
   return <TrackList tracks={songsWithThumbnails} />;

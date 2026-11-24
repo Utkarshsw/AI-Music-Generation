@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 from typing import List
 import uuid
 import modal
@@ -17,6 +17,7 @@ image = (
     .apt_install("git")
     .pip_install_from_requirements("requirements.txt")
     .run_commands(["git clone https://github.com/ace-step/ACE-Step.git /tmp/ACE-Step", "cd /tmp/ACE-Step && pip install ."])
+    .run_commands(["pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0"])
     .env({"HF_HOME": "/.cache/huggingface"})
     .add_local_python_source("prompts")
 )
@@ -72,7 +73,7 @@ class MusicGenServer:
     def load_model(self):
         from acestep.pipeline_ace_step import ACEStepPipeline
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        from diffusers import AutoPipelineForText2Image
+        from diffusers import StableDiffusionXLPipeline
         import torch
 
         # Music Generation Model
@@ -96,7 +97,7 @@ class MusicGenServer:
         )
 
         # Stable Diffusion Model (thumbnails)
-        self.image_pipe = AutoPipelineForText2Image.from_pretrained(
+        self.image_pipe = StableDiffusionXLPipeline.from_pretrained(
             "stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16", cache_dir="/.cache/huggingface")
         self.image_pipe.to("cuda")
 
@@ -163,7 +164,7 @@ class MusicGenServer:
         print(f"Prompt: \n{prompt}")
 
         s3_client = boto3.client("s3")
-        bucket_name = os.environ["S3_BUCKET_NAME"]
+        bucket_name = os.environ["S3_BUCKET_NAME"].strip()
 
         output_dir = "/tmp/outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -180,7 +181,13 @@ class MusicGenServer:
         )
 
         audio_s3_key = f"{uuid.uuid4()}.wav"
-        s3_client.upload_file(output_path, bucket_name, audio_s3_key)
+        raw_bucket_name = os.environ["S3_BUCKET_NAME"]
+        bucket_name = raw_bucket_name.strip()
+
+        print("RAW BUCKET:", repr(raw_bucket_name))
+        print("CLEAN BUCKET:", repr(bucket_name))
+        print("CLEAN BUCKET LENGTH:", len(bucket_name))
+        s3_client.upload_file(output_path, bucket_name, audio_s3_key, ExtraArgs={"ContentType": "audio/wav"})
         os.remove(output_path)
 
         # Thumbnail generation
@@ -192,7 +199,7 @@ class MusicGenServer:
         image.save(image_output_path)
 
         image_s3_key = f"{uuid.uuid4()}.png"
-        s3_client.upload_file(image_output_path, bucket_name, image_s3_key)
+        s3_client.upload_file(image_output_path, bucket_name, image_s3_key, ExtraArgs={"ContentType": "image/png"})
         os.remove(image_output_path)
 
         # Category generation: "hip-hop", "rock"
@@ -257,6 +264,23 @@ class MusicGenServer:
 
 @app.local_entrypoint()
 def main():
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    # Load MODAL_KEY and MODAL_SECRET from frontend/.env
+    env_path = Path(__file__).resolve().parent.parent / "frontend" / ".env"
+    load_dotenv(env_path)
+
+    modal_key = os.environ.get("MODAL_KEY")
+    modal_secret = os.environ.get("MODAL_SECRET")
+    if not modal_key or not modal_secret:
+        raise RuntimeError(f"MODAL_KEY / MODAL_SECRET not found in {env_path}")
+
+    headers = {
+        "Modal-Key": modal_key,
+        "Modal-Secret": modal_secret,
+    }
+
     server = MusicGenServer()
     endpoint_url = server.generate_with_described_lyrics.get_web_url()
 
@@ -268,13 +292,12 @@ def main():
 
     payload = request_data.model_dump()
 
-    response = requests.post(endpoint_url, json=payload)
+    response = requests.post(endpoint_url, json=payload, headers=headers)
     response.raise_for_status()
     result = GenerateMusicResponseS3(**response.json())
 
     print(
         f"Success: {result.s3_key} {result.cover_image_s3_key} {result.categories}")
-
     # audio_bytes = base64.b64decode(result.audio_data)
     # output_filename = "generated.wav"
     # with open(output_filename, "wb") as f:

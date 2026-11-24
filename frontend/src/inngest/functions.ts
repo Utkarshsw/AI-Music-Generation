@@ -127,6 +127,12 @@ export const generateSong = inngest.createFunction(
         });
       });
 
+      console.log("=== MODAL REQUEST DEBUG ===");
+      console.log("Endpoint:", endpoint);
+      console.log("Endpoint length:", endpoint.length);
+      console.log("Has endpoint:", Boolean(endpoint));
+      console.log("===========================");
+
       const response = await step.fetch(endpoint, {
         method: "POST",
         body: JSON.stringify(body),
@@ -136,6 +142,9 @@ export const generateSong = inngest.createFunction(
           "Modal-Secret": env.MODAL_SECRET,
         },
       });
+      console.log("MODAL STATUS:", response.status);
+      console.log("MODAL OK:", response.ok);
+      console.log("MODAL BODY:", await response.clone().text());
 
       await step.run("update-song-result", async () => {
         const responseData = response.ok
